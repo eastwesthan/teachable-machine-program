@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>자세 교정 프로그램</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+  <style>
+    :root{
+      --bg1:#0b1020;
+      --bg2:#101a3a;
+      --card:rgba(18,26,51,.78);
+      --stroke:rgba(255,255,255,.10);
+      --text:#eaf0ff;
+      --muted:rgba(234,240,255,.75);
+      --good:#22c55e;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+      --radius:18px;
+      --shadow: 0 18px 50px rgba(0,0,0,.35);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, "Apple SD Gothic Neo", sans-serif;
+      color:var(--text);
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      background:
+        radial-gradient(900px 450px at 10% 10%, rgba(59,130,246,.18) 0%, transparent 55%),
+        radial-gradient(900px 450px at 90% 20%, rgba(168,85,247,.18) 0%, transparent 55%),
+        linear-gradient(160deg, var(--bg1), var(--bg2));
+    }
+
+    .wrap{
+      width:min(980px, 100%);
+      display:grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap:18px;
+    }
+    @media (max-width: 880px){
+      .wrap{ grid-template-columns:1fr; }
+    }
+
+    .panel{
+      background:var(--card);
+      border:1px solid var(--stroke);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+      backdrop-filter: blur(10px);
+    }
+
+    .header{
+      padding:22px 22px 12px 22px;
+    }
+    .title{
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      margin:0 0 6px 0;
+    }
+    .subtitle{
+      margin:0;
+      color:var(--muted);
+      font-size: 15px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius: 999px;
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.06);
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .content{
+      padding: 0 22px 22px 22px;
+      display:grid;
+      gap:14px;
+    }
+
+    .videoBox{
+      border-radius: var(--radius);
+      border: 1px solid var(--stroke);
+      background: rgba(0,0,0,.18);
+      overflow:hidden;
+      position: relative;
+      min-height: 320px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .hint{
+      color: var(--muted);
+      font-size: 14px;
+      padding: 16px;
+      text-align:center;
+      line-height:1.55;
+    }
+    canvas{
+      width:100% !important;
+      height:auto !important;
+      display:block;
+    }
+
+    .coach{
+      border-radius: var(--radius);
+      border: 1px solid var(--stroke);
+      padding: 14px 14px;
+      background: rgba(255,255,255,.06);
+      display:flex;
+      align-items:flex-start;
+      gap:12px;
+    }
+    .dot{
+      width:12px; height:12px;
+      border-radius:999px;
+      margin-top: 5px;
+      background: var(--warn);
+      box-shadow: 0 0 0 6px rgba(245,158,11,.12);
+      flex: 0 0 auto;
+    }
+    .coach h3{
+      margin:0 0 6px 0;
+      font-size: 15px;
+      letter-spacing: -.01em;
+    }
+    .coach p{
+      margin:0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .controls{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+      padding: 14px 22px 18px 22px;
+      border-top: 1px solid var(--stroke);
+      background: rgba(255,255,255,.03);
+    }
+    .btn{
+      appearance:none;
+      border:none;
+      cursor:pointer;
+      padding:12px 14px;
+      border-radius: 14px;
+      font-weight: 800;
+      color: var(--text);
+      background: linear-gradient(135deg, #3b82f6, #a855f7);
+      box-shadow: 0 10px 25px rgba(59,130,246,.25);
+      transition: transform .08s ease, filter .15s ease, opacity .15s ease;
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+    }
+    .btn:active{ transform: translateY(1px) scale(.99); }
+    .btn.secondary{
+      background: rgba(255,255,255,.08);
+      border:1px solid var(--stroke);
+      box-shadow:none;
+      color: var(--text);
+    }
+    .btn[disabled]{ opacity:.55; cursor:not-allowed; filter: grayscale(.3); }
+
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      color: var(--muted);
+      font-size: 13px;
+      user-select:none;
+    }
+    .toggle input{ transform: translateY(1px); }
+
+    .predPanel{ padding:18px; }
+    .predTitle{
+      font-weight: 900;
+      margin: 0 0 10px 0;
+      letter-spacing:-.01em;
+    }
+    .rows{ display:grid; gap:10px; margin-top: 12px; }
+    .row{
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap:10px;
+      align-items:center;
+      padding: 10px 10px;
+      border-radius: 14px;
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.04);
+    }
+    .name{
+      font-weight: 800;
+      font-size: 13px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .pct{
+      color: var(--muted);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .bar{
+      grid-column: 1 / -1;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.07);
+      overflow:hidden;
+      border:1px solid var(--stroke);
+    }
+    .fill{
+      height:100%;
+      width:0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #22c55e, #3b82f6, #a855f7);
+      transition: width .15s ease;
+    }
+    .pill{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:8px 10px;
+      border-radius: 999px;
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.05);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .footerNote{
+      color: rgba(255,255,255,.55);
+      font-size: 12px;
+      line-height: 1.45;
+      padding: 0 22px 22px 22px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <!-- Left: camera + coach -->
+    <section class="panel">
+      <div class="header">
+        <h1 class="title">&lt;자세 교정 프로그램&gt;</h1>
+        <p class="subtitle">
+          <span class="badge">🧍‍♂️ ‘허리를 펴자’</span>
+          <span class="badge" id="statusBadge">대기 중</span>
+        </p>
+      </div>
+
+      <div class="content">
+        <div class="videoBox" id="webcam-box">
+          <div class="hint" id="hint">
+            시작하기 버튼을 누르면 카메라가 켜집니다.<br/>
+            상체가 화면 중앙에 보이도록 앉거나 서 주세요.
+          </div>
+          <div id="webcam-container" style="width:100%"></div>
+        </div>
+
+        <div class="coach">
+          <span class="dot" id="dot"></span>
+          <div>
+            <h3 id="coachTitle">코치 멘트</h3>
+            <p id="coachText">시작하기를 눌러 자세를 인식해 보세요.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="startBtn" type="button" onclick="init()">
+            ▶ 시작하기
+          </button>
+          <button class="btn secondary" id="stopBtn" type="button" onclick="stop()" disabled>
+            ■ 종료
+          </button>
+        </div>
+
+        <label class="toggle">
+          <input type="checkbox" id="ttsToggle" checked />
+          음성 안내(TTS)
+        </label>
+      </div>
+
+      <div class="footerNote">
+        ※ 본 결과는 웹캠 영상 기반 추정값이며, 자세 교정/의료 진단을 대체하지 않습니다.
+      </div>
+    </section>
+
+    <!-- Right: predictions -->
+    <aside class="panel predPanel">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <h2 class="predTitle">인식 결과</h2>
+        <span class="pill" id="fpsPill">FPS: -</span>
+      </div>
+      <div id="label-container" class="rows"></div>
+    </aside>
+  </div>
+
+  <script type="text/javascript">
+    // ✅ 사용 중인 모델 URL 그대로 유지
+    const URL = "https://teachablemachine.withgoogle.com/models/OGWG12IGn/";
+
+    let model, webcam, maxPredictions;
+    let rafId = null;
+    let labelContainer;
+    let lastSpeakAt = 0;
+    let lastSpoken = "";
+    let fps = { lastT: performance.now(), frames: 0 };
+
+    const statusBadge = document.getElementById("statusBadge");
+    const coachTitle  = document.getElementById("coachTitle");
+    const coachText   = document.getElementById("coachText");
+    const dot         = document.getElementById("dot");
+    const ttsToggle   = document.getElementById("ttsToggle");
+    const startBtn    = document.getElementById("startBtn");
+    const stopBtn     = document.getElementById("stopBtn");
+    const fpsPill     = document.getElementById("fpsPill");
+    labelContainer    = document.getElementById("label-container");
+
+    function setStatus(text){ statusBadge.textContent = text; }
+
+    function setDot(level){
+      const styles = getComputedStyle(document.documentElement);
+      const good = styles.getPropertyValue("--good").trim();
+      const warn = styles.getPropertyValue("--warn").trim();
+      const bad  = styles.getPropertyValue("--bad").trim();
+
+      if(level === "good"){
+        dot.style.background = good;
+        dot.style.boxShadow  = "0 0 0 6px rgba(34,197,94,.12)";
+      } else if(level === "bad"){
+        dot.style.background = bad;
+        dot.style.boxShadow  = "0 0 0 6px rgba(239,68,68,.12)";
+      } else {
+        dot.style.background = warn;
+        dot.style.boxShadow  = "0 0 0 6px rgba(245,158,11,.12)";
+      }
+    }
+
+    function speak(text){
+      if(!ttsToggle.checked) return;
+
+      const now = Date.now();
+      // 너무 자주 말하면 시끄러우니 쿨다운 + 같은 문구 반복 방지
+      if(now - lastSpeakAt < 1800) return;
+      if(text === lastSpoken) return;
+
+      lastSpeakAt = now;
+      lastSpoken = text;
+
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "ko-KR";
+      u.rate = 1.02;
+      u.pitch = 1.0;
+      window.speechSynthesis.speak(u);
+    }
+
+    function toPercent(p){ return (p * 100).toFixed(1) + "%"; }
+
+    function makeRow(name){
+      const row = document.createElement("div");
+      row.className = "row";
+
+      const left = document.createElement("div");
+      left.className = "name";
+      left.textContent = name;
+
+      const pct = document.createElement("div");
+      pct.className = "pct";
+      pct.textContent = "0.0%";
+
+      const bar = document.createElement("div");
+      bar.className = "bar";
+
+      const fill = document.createElement("div");
+      fill.className = "fill";
+      bar.appendChild(fill);
+
+      row.appendChild(left);
+      row.appendChild(pct);
+      row.appendChild(bar);
+
+      return { row, pct, fill, name };
+    }
+
+    async function init() {
+      try{
+        startBtn.disabled = true;
+        setStatus("모델 불러오는 중…");
+        setDot("warn");
+        coachTitle.textContent = "준비 중";
+        coachText.textContent  = "모델을 불러오고 있습니다. 잠시만 기다려 주세요.";
+
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+
+        model = await tmImage.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        // webcam setup
+        const flip = true;
+        webcam = new tmImage.Webcam(420, 320, flip);
+        await webcam.setup();
+        await webcam.play();
+
+        // attach webcam canvas
+        const wc = document.getElementById("webcam-container");
+        wc.innerHTML = "";
+        wc.appendChild(webcam.canvas);
+
+        // build prediction rows
+        labelContainer.innerHTML = "";
+        const rows = [];
+        const labels = model.getClassLabels();
+        for (let i = 0; i < maxPredictions; i++) {
+          const r = makeRow(labels[i]);
+          labelContainer.appendChild(r.row);
+          rows.push(r);
+        }
+        labelContainer._rows = rows;
+
+        stopBtn.disabled = false;
+        setStatus("인식 중");
+        setDot("warn");
+        coachTitle.textContent = "자세를 확인하고 있어요";
+        coachText.textContent  = "상체가 화면 중앙에 잘 보이도록 해 주세요.";
+
+        fps.lastT = performance.now();
+        fps.frames = 0;
+
+        loop();
+      } catch(err){
+        console.error(err);
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        setStatus("오류");
+        setDot("bad");
+        coachTitle.textContent = "시작 실패";
+        coachText.textContent  = "카메라 권한 또는 모델 URL을 확인해 주세요.";
+        alert("시작에 실패했습니다.\n- 카메라 권한 허용\n- 모델 URL 확인\n콘솔 로그를 확인해 주세요.");
+      }
+    }
+
+    async function loop() {
+      webcam.update();
+      await predict();
+
+      // FPS 표시
+      fps.frames++;
+      const now = performance.now();
+      if(now - fps.lastT >= 1000){
+        const value = Math.round((fps.frames * 1000) / (now - fps.lastT));
+        fpsPill.textContent = "FPS: " + value;
+        fps.lastT = now;
+        fps.frames = 0;
+      }
+
+      rafId = window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+      const prediction = await model.predict(webcam.canvas);
+
+      // 정렬하여 top 뽑기
+      const sorted = prediction
+        .map(p => ({ className: p.className, probability: p.probability }))
+        .sort((a,b) => b.probability - a.probability);
+
+      const top = sorted[0];
+      const topLabel = top.className;
+      const topProb  = top.probability;
+
+      // rows 업데이트
+      const rows = labelContainer._rows || [];
+      const map = new Map(prediction.map(p => [p.className, p.probability]));
+      rows.forEach(r => {
+        const p = map.get(r.name) ?? 0;
+        r.pct.textContent = toPercent(p);
+        r.fill.style.width = (p * 100) + "%";
+      });
+
+      // ✅ 코치 멘트 (클래스명 키워드 기반)
+      const lower = String(topLabel).toLowerCase();
+      let level = "warn";
+      let title = "자세 체크";
+      let msg = `현재 "${topLabel}"로 인식됩니다. (확률 ${toPercent(topProb)})`;
+
+      if (lower.includes("바른") || lower.includes("정자세") || lower.includes("좋") || lower.includes("올바")) {
+        level = "good";
+        title = "좋아요! 바른 자세";
+        msg = `아주 좋습니다. 지금 자세를 유지해 보세요. (확률 ${toPercent(topProb)})`;
+        speak("좋아요. 바른 자세입니다. 지금처럼 허리를 펴 주세요.");
+      } else if (lower.includes("구부") || lower.includes("거북") || lower.includes("나쁜") || lower.includes("틀어") || lower.includes("삐")) {
+        level = "bad";
+        title = "자세 교정 필요";
+        msg = `허리를 펴고 어깨를 편 뒤, 턱을 살짝 당겨 보세요. (확률 ${toPercent(topProb)})`;
+        speak("자세를 바로잡아 주세요. 허리를 펴고 어깨를 펴며 턱을 살짝 당겨 보세요.");
+      } else {
+        level = "warn";
+        title = "자세를 조정해 볼까요?";
+        msg = `상체가 화면 중앙에 오도록 하고, 허리를 곧게 펴 보세요. (확률 ${toPercent(topProb)})`;
+        if(topProb > 0.75){
+          speak(`현재 ${topLabel} 자세입니다. 허리를 펴 보세요.`);
+        }
+      }
+
+      setDot(level);
+      coachTitle.textContent = title;
+      coachText.textContent  = msg;
+    }
+
+    async function stop(){
+      try{
+        if(rafId) cancelAnimationFrame(rafId);
+        rafId = null;
+
+        if(webcam){
+          await webcam.stop();
+        }
+        window.speechSynthesis.cancel();
+
+        setStatus("대기 중");
+        setDot("warn");
+        coachTitle.textContent = "중지됨";
+        coachText.textContent  = "시작하기를 누르면 다시 인식합니다.";
+
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      } catch(err){
+        console.error(err);
+      }
+    }
+  </script>
+</body>
+</html>
